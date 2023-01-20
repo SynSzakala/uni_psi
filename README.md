@@ -155,7 +155,7 @@ z największą wartością.
 #### Policy Gradient
 
 Algorytmy klasy Policy Gradient przyjmują bardziej bezpośrednie podejście i aproksymują funkcję zwracającą
-najoptymalniejszą akcję dla danej obserwacji. W przeciwieństwie do Q-Learning, agent nie musi wybrać akcji z największą
+najoptymalniejszą akcję dla danej obserwacji. W przeciwieństwie do Q-Learning agent nie musi wybrać akcji z największą
 nagrodą, co czasem pozwala na mniej deterministyczne zachowanie pożądane w środowiskach losowych.
 
 ![img_5.png](img_5.png)
@@ -164,60 +164,184 @@ Zdecydowaliśmy, że sprawdzimy skuteczność najpopularniejszych algorytmów z 
 oraz Proximal Policy Optimization (PPO). Implementacje obu algorytmów udostępnia
 biblioteka [OpenAI Baselines](https://github.com/openai/baselines).
 
-### Trenowane konfiguracje
+### Architektura sieci neuronowej
 
-### Najlepszy model
+Obie z metod uczenia wymagają zaprojektowania sieci neuronowej będącej w stanie przyjąć obserwacje jako wejście.
+Jako że stan poszczególnych pól przedstawia dane przestrzenne, naturalne wydaje się wykorzystanie sieci
+konwolucyjnych (CNN).
+Popularnym podejściem w RL jest także łączenie sieci CNN (w charakterze "feature extractor") z dodatkowymi warstwami
+MLP (typowa, w pełni połączona sieć neuronowa).
+Zdecydowaliśmy, że przetestujemy różne architektury i rozmiary sieci.
 
-### Wnioski
+### Testowane konfiguracje
 
-## Dokumentacja techniczna
+#### PPO, CNN + 2xMLP(256)
 
-### Środowisko
+Pierwsza testowana konfiguracja, używająca algorytmu PPO i korzystająca z połączenia CNN oraz z dwóch warstw MLP, każda
+z 256 ukrytymi warstwami, radziła sobie słabo mimo dość długiej nauki.
 
-### Konfiguracja sieci neuronowej
+- Ilość kroków: 7M
+- Średnia długość gry: 60 kroków
+- Średnia nagroda gry: -2
 
-### Trenowanie
+#### DQN, CNN + 2xMLP(64)
 
-### Ewaluacja
+W następnej konfiguracji postanowiliśmy przetestować algorytm DQN w połączeniu z mniejszą siecią MLP. Wynikowa sieć dość
+szybko osiągnęła wyniki lepsze niż poprzednia iteracja, ale potem zaczęła wykazywać dużą niestabilność i brak perspektyw
+na dalszy wzrost.
 
-## DQN: MLP(256, 256)
-
-Obs:
-tiles+direction
-
-Reward:
--5 fail
-1 food
--0.01 step
-
-Result:
-7M: -2r/60l
-
-## DQN: CNN + MLP(64,64)
-
-Result:
-700k: -1.5r/65l
+- Ilość kroków: 700k
+- Średnia długość gry: 65 kroków
+- Średnia nagroda: -1,5
 
 ![img.png](img.png)
 
-## DQN: CNN + MLP(256, 256)
+#### DQN, CNN + 2xMLP(256)
 
-Result:
-300k: -2.5r/60l
+Postanowiliśmy zwiększyć rozmiar sieci MLP w nadziei na osiągnięcie dłuższego wzrostu, natomiast nie przyniosło to
+zauważalnych skutków.
+
+- Ilość kroków: 300k
+- Średnia długość gry: 60 kroków
+- Średnia nagroda: -2,5
 
 ![img_1.png](img_1.png)
 
-## DQN: MLP(256, 256)
+#### DQN, 2xMLP(256)
 
-Reward:
--5 fail
-1 food
--0.01/-0.05/-0.08 step
+W finalnej testowanej konfiguracji postanowiliśmy sprawdzić jakie efekty spowoduje wykorzystanie samej, dużej sieci MLP,
+bez użycia CNN. Dzięki stosowanemu mechanizmowi treningu mieliśmy możliwość zmiany mechanizmu nagrody w trakcie nauki.
+Postanowiliśmy więc stopniowo zwiększać karę za bezczynność (aż do -0.08) w momentach, w których agent przestawał
+wykazywać wzrost uzyskiwanych nagród. Okazało się, że to podejście pozwoliło wytrenować obiektywnie najlepszego agenta.
 
-Obs:
-tiles (normalized)
+- Ilość kroków: 20M
+- Średnia długość gry: 75 kroków
+- Średnia nagroda: -5
 
-Result:
-20M: -5r/75l
+Niestety, przez zmieniony mechanizm nagrody ciężko porównywać powyższe liczby z poprzednimi wynikami. W następnej sekcji
+dokonujemy bardziej obiektywnej ewaluacji.
 
 ![img_2.png](img_2.png)
+
+### Ewaluacja
+
+Ewaluacja modelu opierała się na wykonaniu 1000 gier. Wyniki:
+
+- Średnia długość: 186 kroków
+- Średnia liczba punktów zdobytych w grze: 15.2
+- Średnia nagroda na każdy wykonany krok: 0,081
+
+![](evaluate.gif)
+
+### Wnioski
+
+Wytrenowany agent osiąga wyniki porównywalne do ludzkich. Potrafi on planować proste strategie w celu uniknięcia
+okrążenia, jednocześnie zdobywając rozsądną ilość punktów. Jednak czasem popełnia proste błędy, przykładowo wchodząc w
+swój własny ogon przy bardziej skomplikowanych sytuacjach.
+
+Ciekawym wynikiem jest uzyskana przy ewaluacji średnia nagroda za każdy wykonany krok, zbiegająca się z finalnym
+stosunkiem kary za pasywność. Sugeruje to, że przy dalszym dostosowywaniu funkcji nagrody połączonej z dłuższym
+treningiem być może udałoby się osiągnąć lepsze wyniki.
+
+## Dokumentacja techniczna
+
+### Instalacja
+
+Do instalacji projektu wymagany jest Python 3.x. Aby zainstalować zależności, należy wykonać:
+
+```shell
+$ pip install -r requirements.txt
+```
+
+### Środowisko
+
+Logikę gry realizuje implementacja środowiska zawarta w `env/snake_env.py`, z dodatkowymi narzędziami
+w `env/snake_utils.py`. Dzięki modyfikacji funkcji step można modyfikować zasady przydzielania nagród:
+
+```python
+def step(self, action: Direction | None):
+    if action is not None:
+        self.state.direction = action
+    done = self.__maybe_move_snake()
+    if done:
+        reward = -10
+    else:
+        if self.__maybe_consume_food():
+            reward = 1
+            done = len(self.state.body) > self.size.area * 0.5
+        else:
+            reward = -0.01
+        self.__maybe_spawn_food()
+
+    return self.state.build_tiles(), reward, done, {}
+```
+
+Działanie środowiska można przetestować za pomocą skryptu `test_human.py`, który pozwala kontrolować grę za pomocą
+klawiatury.
+
+```shell
+$ python test_human.py
+```
+
+### Konfiguracja architektury sieci neuronowej
+
+Architektura sieci jest definiowana w pliku `train.py`.
+
+```python
+model = DQN(
+    policy=MlpPolicy,
+    policy_kwargs={
+        "net_arch": [256, 256],
+    },
+    # ...
+)
+```
+
+Modyfikując te parametry, można zmieniać rozmiar sieci lub dodawać kolejne warstwy, których przykłady można znaleźć
+w `snake_feature_extractor.py` lub `custom_combined_extractor.py`.
+
+### Trenowanie
+
+Aby rozpocząć trenowanie, należy uruchomić skrypt `train.py`. Jeśli w katalogu istnieje plik `model.zip`, jest on
+wczytywany, a trenowanie jest wznawianie. W przeciwnym wypadku trening zaczyna się od nowa. Co 10k kroków skrypt
+zapisuje aktualną wersję modelu, co później pozwala na kontynuację treningu.
+
+```shell
+$ python train.py
+```
+
+W trakcie treningu kluczowe metryki są logowane do katalogu `tb`. Można je monitorować korzystając z oprogramowania
+TensorBoard.
+
+```shell
+$ tensorboard --logdir ./tb/
+TensorBoard 2.11.0 at http://localhost:6006/ (Press CTRL+C to quit)
+```
+
+Uruchomienie wskazanego adresu w przeglądarce otwiera konsolę, pokazującą aktualne parametry. Wśród nich za kluczowe
+można uznać `ep_len_mean` (średnia długość gry) i `ep_rew_mean` (średnia nagroda w trakcie gry).
+
+### Ewaluacja
+
+Ewaluacja automatyczna jest możliwa za pomocą skryptu `evaluate_model.py`:
+
+```shell
+$ python evaluate_model.py best_model.zip
+1000 episodes, avg len: 185.729, avg rew/episode 15.218, total rew/len 0.0819365850244173
+```
+
+Ręczne podejrzenie działania bota jest możliwe dzięki skryptowi `evaluate_model.py` który wyświetla graficzną
+reprezentację działania agenta w prędkości czytelnej dla ludzkiego oka.
+
+```shell
+$ python test_model.py best_model.zip
+```
+
+## Bibliografia
+
+1. [Faulty reward functions, OpenAI](https://openai.com/blog/faulty-reward-functions/)
+2. [AlphaZero, Google Deep Mind](https://www.deepmind.com/blog/alphazero-shedding-new-light-on-chess-shogi-and-go)
+3. [Snake with RL and CNN](https://www.researchgate.net/publication/327638529_Autonomous_Agents_in_Snake_Game_via_Deep_Reinforcement_Learning)
+4. [SIMPLE framework](https://github.com/davidADSP/SIMPLE)
+5. [Basic snake with RL](https://towardsdatascience.com/snake-played-by-a-deep-reinforcement-learning-agent-53f2c4331d36)
+6. [OpenAI Baselines](https://github.com/openai/baselines)

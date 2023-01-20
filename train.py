@@ -1,6 +1,5 @@
 from stable_baselines3 import DQN, PPO
-from stable_baselines3.dqn.policies import MultiInputPolicy, DQNPolicy
-from stable_baselines3.ppo import MlpPolicy, CnnPolicy
+from stable_baselines3.dqn import MlpPolicy, CnnPolicy
 
 from custom_combined_extractor import CustomCombinedExtractor, CustomNatureCNN
 from env.snake_utils import Size
@@ -10,21 +9,20 @@ from snake_feature_extractor import SnakeFeatureExtractor
 size = Size(10, 10)
 env = SnakeEnv(size)
 
-model: PPO
+model: DQN
 
 try:
-    model = PPO.load(
+    model = DQN.load(
         "model.zip",
         env=env,
         verbose=1,
         tensorboard_log='./tb'
     )
 except:
-    model = PPO(
-        policy=CnnPolicy,
+    model = DQN(
+        policy=MlpPolicy,
         policy_kwargs={
             "net_arch": [256, 256],
-            "features_extractor_class": CustomNatureCNN,
         },
         env=env,
         verbose=1,
